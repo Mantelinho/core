@@ -122,6 +122,9 @@ class Log:
     range_charged: float = 0
     time_charged: str = "00:00"
     timestamp_start_charging: Optional[str] = None
+    ev: int = -1
+    prio: bool = False
+    rfid: Optional[str] = None
 
 
 def connected_vehicle_factory() -> ConnectedVehicle:
@@ -420,7 +423,7 @@ class Chargepoint:
                     self.data.set.manual_lock = True
                     Pub().pub("openWB/set/chargepoint/"+str(self.num)+"/set/manual_lock", True)
                 # Ev wurde noch nicht aktualisiert.
-                chargelog.reset_data(self, data.data.ev_data["ev"+str(self.data.set.charging_ev_prev)])
+                chargelog.save_and_reset_data(self, data.data.ev_data["ev"+str(self.data.set.charging_ev_prev)])
                 self.data.set.charging_ev_prev = -1
                 Pub().pub("openWB/set/chargepoint/"+str(self.num)+"/set/charging_ev_prev",
                           self.data.set.charging_ev_prev)
@@ -484,14 +487,18 @@ class Chargepoint:
         self.data.set.plug_state_prev = self.data.get.plug_state
         Pub().pub("openWB/set/chargepoint/"+str(self.num)+"/set/plug_state_prev", self.data.set.plug_state_prev)
 
-    def reset_log_data_regarding_chargemode(self, reset: bool = False) -> None:
+    def reset_log_data_chargemode_switch(self) -> None:
         reset_log = Log()
-        if reset is False:
-            # Wenn ein Zwischeneintrag, zB bei Wechsel des Lademodus, erstellt wird, Zählerstände nicht verwerfen.
-            reset_log.imported_at_mode_switch = self.data.get.imported
-            reset_log.imported_at_plugtime = self.data.set.log.imported_at_plugtime
-            reset_log.imported_since_plugged = self.data.set.log.imported_since_plugged
+        # Wenn ein Zwischeneintrag, zB bei Wechsel des Lademodus, erstellt wird, Zählerstände nicht verwerfen.
+        reset_log.imported_at_mode_switch = self.data.get.imported
+        reset_log.imported_at_plugtime = self.data.set.log.imported_at_plugtime
+        reset_log.imported_since_plugged = self.data.set.log.imported_since_plugged
         self.data.set.log = reset_log
+        Pub().pub(f"openWB/set/chargepoint/{self.num}/set/log", asdict(self.data.set.log))
+
+    def reset_log_data(self) -> None:
+        self.data.set.log = Log()
+        Pub().pub(f"openWB/set/chargepoint/{self.num}/set/log", asdict(self.data.set.log))
 
     def prepare_cp(self) -> Tuple[int, Optional[str]]:
         try:
@@ -902,7 +909,7 @@ class Chargepoint:
                     # Ein Eintrag muss nur erstellt werden, wenn vorher schon geladen wurde und auch danach noch
                     # geladen werden soll.
                     if charging_ev.chargemode_changed and self.data.get.charge_state and state:
-                        chargelog.save_data(self, charging_ev)
+                        chargelog.save_interim_data(self, charging_ev)
 
                     # Wenn die Nachrichten gesendet wurden, EV wieder löschen, wenn das EV im Algorithmus nicht
                     # berücksichtigt werden soll.
